@@ -4,17 +4,10 @@ from collections import defaultdict
 from tqdm import tqdm
 import gzip
 from multiprocessing.pool import Pool
-from multiprocessing.managers import BaseManager, DictProxy
+import fasttext
 import os
 
-
-class MyManager(BaseManager):
-    pass
-
-
-MyManager.register('defaultdict', defaultdict, DictProxy)
-
-_hashes = defaultdict(int)
+lid_model = fasttext.load_model("./bin/lid.bin")
 
 
 def _file_loader(fname):
@@ -101,32 +94,33 @@ def _output(results):
             print('\t'.join(list(map(str, [key[0], key[1], value]))))
 
 
-def _create_hash(fname, shared_dict):
+def _create_hash(fname):
+    hashes = defaultdict(int)
     for line, mode in tqdm(_corpus_loader(_file_loader(fname))):
         if mode is not None and not mode:
-            shared_dict[hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()] += 1
+            hashes[hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()] += 1
+    return hashes
 
 
 def create_hashes(files):
     pool = Pool(os.cpu_count())
-    mgr = MyManager()
-    mgr.start()
-    hashes = mgr.defaultdict(int)
-    for fname in files:
-        pool.apply_async(_create_hash, (fname, _hashes))
+    hashes = defaultdict(int)
+    hashes_list = pool.map(_create_hash, files)
+    for h in hashes_list:
+        hashes.update(h)
     pool.close()
-    pool.join()
     return hashes
 
 
 def main():
+    pool = Pool(os.cpu_count())
     files = [x.strip() for x in sys.stdin]
     hashes = create_hashes(files)
     for fname in files:
         line_gen = (x for x in _file_loader(fname))
-        pool = Pool(os.cpu_count())
         results = pool.map(_split_by_lang, _corpus_loader_dedup(line_gen, hashes))
         _output(results)
+    pool.close()
 
 
 if __name__ == "__main__":
