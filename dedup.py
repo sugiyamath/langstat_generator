@@ -1,13 +1,18 @@
 import sys
 import hashlib
-from collections import defaultdict
+from collections import defaultdict, ChainMap
 from tqdm import tqdm
 import gzip
 from multiprocessing.pool import Pool
 import fasttext
 import os
+import text_normalizer
+import kenlm
+import sentencepiece as spm
+from functools import partial
 
-lid_model = fasttext.load_model("./bin/lid.bin")
+bin_dir = sys.argv[1]
+lid_model = fasttext.load_model(os.path.join(bin_dir, "lid.bin"))
 
 
 def _file_loader(fname):
@@ -62,36 +67,54 @@ def _corpus_loader_dedup(line_generator, hashes):
                 header_mode = False
         else:
             h = hashes[hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()]
-            if h > 1:
+            if h < 2:
                 out.append(line)
 
 
-def _split_by_lang(batch):
+def _detect_lang(batch):
     out = {}
+    lscores = []
     for line in batch["data"]:
-        lang = lid_model.predict(line)[0][0].split("__")[-1]
+        tmp_pred = lid_model.predict(line)
+        lang = tmp_pred[0][0].split("__")[-1]
+        lscores.append(float(tmp_pred[1][0]))
         if lang not in out:
             out[lang] = []
         out[lang].append(line)
+    lscore = sum(x/len(lscores) for x in lscores)
     out = max(out.items(), key=lambda x: len(x[1]))
     return {"lang": out[0],
+            "language_score": lscore,
             "length": len(''.join(out[1])),
             "url": batch["url"],
-            "domain": batch["domain"]}
+            "domain": batch["domain"],
+            "data": batch["data"]}
 
 
-def _output(results):
+def _split_by_lang(results):
+    out = defaultdict(list)
+    for result in results:
+        out[result["lang"]].append(result)
+    return out
+
+
+def _output(results, score_outpath, langstat_outpath):
     out = {}
     sep = "_____"
-    for result in results:
-        d = result["domain"] + sep + result["lang"] 
-        if d not in out:
-            out[d] = 0
-        out[d] += result["length"]
-    for key, value in out.items():
-        key = key.split(sep)
-        if len(key) == 2:
-            print('\t'.join(list(map(str, [key[0], key[1], value]))))
+    with open(score_outpath, "a") as f:
+        for result in results:
+            d = result["domain"] + sep + result["lang"] 
+            if d not in out:
+                out[d] = 0
+            out[d] += result["length"]
+            f.write("{}\t{}\t{}\t{}\n".format(
+                result["url"], result["domain"],
+                result["language_score"], result["perplexity"]))
+    with open(langstat_outpath, "a") as f:
+        for key, value in out.items():
+            key = key.split(sep)
+            if len(key) == 2:
+                f.write('{}\t{}\t{}\n'.format(key[0], key[1], value))
 
 
 def _create_hash(fname):
@@ -102,26 +125,56 @@ def _create_hash(fname):
     return hashes
 
 
+def _add_lang_score(result, lm, sp):
+    pp_scores = []
+    for line in result["data"]:
+        line = text_normalizer.normalize(line)
+        pieces = ' '.join(sp.encode_as_pieces(line))
+        log_score = lm.score(' '.join(pieces))
+        if len(pieces):
+            pp_scores.append(10.0**(-log_score/len(pieces)))    
+    pp_score = sum(x/len(pp_scores) for x in pp_scores)
+    result["perplexity"] = pp_score
+    del(result["data"])
+    return result
+
+
 def create_hashes(files):
     pool = Pool(os.cpu_count())
-    hashes = defaultdict(int)
     hashes_list = pool.map(_create_hash, files)
+    hashes = defaultdict(int)
     for h in hashes_list:
         hashes.update(h)
     pool.close()
     return hashes
 
 
-def main():
+def _load_lm(bin_dir, lang):
+    kpath = os.path.join(bin_dir, "lm_sp", lang+".arpa.bin")
+    spath = os.path.join(bin_dir, "lm_sp", lang+".sp.model")
+    lm = kenlm.Model(kpath)
+    sp = spm.SentencePieceProcessor()
+    sp.Load(spath)
+    return lm, sp
+
+
+def main(score_outpath, langstat_outpath):
     pool = Pool(os.cpu_count())
     files = [x.strip() for x in sys.stdin]
     hashes = create_hashes(files)
     for fname in files:
         line_gen = (x for x in _file_loader(fname))
-        results = pool.map(_split_by_lang, _corpus_loader_dedup(line_gen, hashes))
-        _output(results)
+        results = pool.map(_detect_lang, _corpus_loader_dedup(line_gen, hashes))
+        results_by_lang = _split_by_lang(results)
+        for lang, results in tqdm(results_by_lang.items()):
+            try:
+                lm, sp = _load_lm(bin_dir, lang)
+            except:
+                continue
+            results = [_add_lang_score(result, lm=lm, sp=sp) for result in tqdm(results)]
+            _output(results, score_outpath, langstat_outpath)
     pool.close()
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[2], sys.argv[3])
