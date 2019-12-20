@@ -21,6 +21,12 @@ def _file_loader(fname):
             yield line
 
 
+def _file_loader_bulk(fnames):
+    for fname in fnames:
+        for line in _file_loader(fname):
+            yield line
+
+
 def _corpus_loader(line_generator):
     wstr = "WARC/1.0"
     header_mode = False
@@ -91,40 +97,6 @@ def _detect_lang(batch):
             "data": batch["data"]}
 
 
-def _split_by_lang(results):
-    out = defaultdict(list)
-    for result in results:
-        out[result["lang"]].append(result)
-    return out
-
-
-def _output(results, score_outpath, langstat_outpath):
-    out = {}
-    sep = "_____"
-    with open(score_outpath, "a") as f:
-        for result in results:
-            d = result["domain"] + sep + result["lang"] 
-            if d not in out:
-                out[d] = 0
-            out[d] += result["length"]
-            f.write("{}\t{}\t{}\t{}\n".format(
-                result["url"], result["domain"],
-                result["language_score"], result["perplexity"]))
-    with open(langstat_outpath, "a") as f:
-        for key, value in out.items():
-            key = key.split(sep)
-            if len(key) == 2:
-                f.write('{}\t{}\t{}\n'.format(key[0], key[1], value))
-
-
-def _create_hash(fname):
-    hashes = defaultdict(int)
-    for line, mode in tqdm(_corpus_loader(_file_loader(fname))):
-        if mode is not None and not mode:
-            hashes[hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()] += 1
-    return hashes
-
-
 def _add_lang_score(result, lm, sp):
     pp_scores = []
     for line in result["data"]:
@@ -137,6 +109,53 @@ def _add_lang_score(result, lm, sp):
     result["perplexity"] = pp_score
     del(result["data"])
     return result
+
+
+def _split_by_lang(results):
+    while results:
+        stack = []
+        current_lang = None
+        ignore = False
+        for i, result in enumerate(results):
+            if current_lang is None:
+                current_lang = result["lang"]
+                try:
+                    lm, sp = _load_lm(bin_dir, current_lang)
+                except:
+                    ignore = True
+            if result["lang"] == current_lang:
+                if not ignore:
+                    yield _add_lang_score(result, lm, sp)
+                stack.append(i)
+        for i in stack[::-1]:
+            results.pop(i)
+
+
+def _output(results, score_outpath, langstat_outpath):
+    out = {}
+    sep = "_____"
+    with open(score_outpath, "a") as f:
+        for result in tqdm(results):
+            d = result["domain"] + sep + result["lang"] 
+            if d not in out:
+                out[d] = 0
+            out[d] += result["length"]
+            f.write("{}\t{}\t{}\t{}\t{}\n".format(
+                result["url"], result["domain"], result["lang"],
+                result["language_score"], result["perplexity"]))
+    with open(langstat_outpath, "a") as f:
+        for key, value in tqdm(out.items()):
+            key = key.split(sep)
+            if len(key) == 2:
+                f.write('{}\t{}\t{}\n'.format(key[0], key[1], value))
+
+
+def _create_hash(fname):
+    hashes = defaultdict(int)
+    for line, mode in tqdm(_corpus_loader(_file_loader(fname))):
+        if mode is not None and not mode:
+            hashes[hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()] += 1
+    return hashes
 
 
 def create_hashes(files):
@@ -157,23 +176,15 @@ def _load_lm(bin_dir, lang):
     sp.Load(spath)
     return lm, sp
 
-
+        
 def main(score_outpath, langstat_outpath):
     pool = Pool(os.cpu_count())
     files = [x.strip() for x in sys.stdin]
     hashes = create_hashes(files)
-    for fname in files:
-        line_gen = (x for x in _file_loader(fname))
-        results = pool.map(_detect_lang, _corpus_loader_dedup(line_gen, hashes))
-        results_by_lang = _split_by_lang(results)
-        for lang, results in tqdm(results_by_lang.items()):
-            try:
-                lm, sp = _load_lm(bin_dir, lang)
-            except:
-                continue
-            results = [_add_lang_score(result, lm=lm, sp=sp) for result in tqdm(results)]
-            _output(results, score_outpath, langstat_outpath)
-    pool.close()
+    line_gen = (x for x in tqdm(_file_loader_bulk(files)))
+    results = pool.map(_detect_lang, _corpus_loader_dedup(line_gen, hashes))
+    results = _split_by_lang(results)
+    _output(results, score_outpath, langstat_outpath)
 
 
 if __name__ == "__main__":
