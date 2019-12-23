@@ -1,3 +1,4 @@
+import gc
 import sys
 import hashlib
 from collections import defaultdict
@@ -9,7 +10,7 @@ import os
 import text_normalizer
 import kenlm
 import sentencepiece as spm
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, wrap_non_picklable_objects
 import json
 import random
 import string
@@ -25,6 +26,28 @@ ls2 = {x.split(".")[0] for x in os.listdir(os.path.join(bin_dir, "lm_sp"))
 langs = ls1 & ls2
 
 shared_data = {lang: [] for lang in langs}
+
+lm = None
+sp = None
+
+
+def _add_lang_score(line):
+    global lm, sp
+    result = json.loads(line.strip())
+    doc_score = 0
+    doc_length = 0
+    for line in result["data"]:
+        line = text_normalizer.normalize(line)
+        pieces = ' '.join(sp.EncodeAsPieces(line))
+        if len(pieces):
+            doc_score += lm.score(' '.join(pieces))
+            doc_length += len(pieces)
+    if doc_length:
+        result["perplexity"] = 10.0**(-doc_score/doc_length)
+    else:
+        result["perplexity"] = 0.0
+    del(result["data"])
+    return result
 
 
 def _file_loader(fname):
@@ -109,20 +132,6 @@ def _detect_lang(batch):
             "data": batch["data"]}
 
 
-def _add_lang_score(line, lm, sp):
-    result = json.loads(line.strip())
-    doc_score = 0
-    doc_length = 0
-    for line in result["data"]:
-        line = text_normalizer.normalize(line)
-        pieces = ' '.join(sp.encode_as_pieces(line))
-        doc_score += lm.score(' '.join(pieces))
-        doc_length += len(pieces)
-    result["perplexity"] = 10.0**(-doc_score/doc_length)
-    del(result["data"])
-    return result
-
-
 def randomString(stringLength=10):
     """Generate a random string of fixed length """
     letters = string.ascii_lowercase
@@ -149,16 +158,25 @@ def _split_by_lang(results, tmp_dir="./tmp"):
     return fprefix
 
 
+def _initializer(lm_s, sp_s):
+    global lm, sp
+    lm = lm_s
+    sp = sp_s
+
+
 def _add_lang_score_bulk(fprefix, tmp_dir="./tmp"):
-    pool = Pool(os.cpu_count())
     target_langs = [x.split("_")[-1] for x in os.listdir(tmp_dir)]
     for lang in target_langs:
-        lm, sp = _load_lm(bin_dir, lang)
+        lm_s, sp_s = _load_lm(bin_dir, lang)
+        pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
         with open(os.path.join(
                 tmp_dir, fprefix+"_{}".format(lang))) as f:
-            func = partial(_add_lang_score, lm=lm, sp=sp)
-            yield list(pool.imap(func, f))
-    pool.close()
+            out = pool.imap(_add_lang_score, f)
+            yield list(out)
+            del(lm_s)
+            del(sp_s)
+        pool.close()
+        gc.collect()
 
 
 def _output(results, score_outpath, langstat_outpath):
@@ -209,16 +227,18 @@ def _load_lm(bin_dir, lang):
         
 def main(score_outpath, langstat_outpath):
     pool = Pool(os.cpu_count())
-    files = [x.strip() for x in sys.stdin]
-    hashes = create_hashes(files)
-    line_gen = (x for x in tqdm(_file_loader_bulk(files)))
-    results = (_detect_lang(x) for x in _corpus_loader_dedup(line_gen, hashes))
-    fprefix = _split_by_lang(results)
-    results_list = (results for result in _add_lang_score_bulk(fprefix))
+    #files = [x.strip() for x in sys.stdin]
+    #hashes = create_hashes(files)
+    #line_gen = (x for x in tqdm(_file_loader_bulk(files)))
+    #results = (_detect_lang(x) for x in _corpus_loader_dedup(line_gen, hashes))
+    #fprefix = _split_by_lang(results)
+    fprefix = "qygslozocmstpnvahkkx"
+    results_list = list(_add_lang_score_bulk(fprefix))
     func = partial(_output,
                    score_outpath=score_outpath,
                    langstat_outpath=langstat_outpath)
-    list(pool.imap(func, results_list))
+    f = map(func, results_list)
+    list(f)
     pool.close()
 
 
