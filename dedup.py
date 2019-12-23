@@ -144,19 +144,6 @@ def _save_to_tmp(result, tmp_dir, fprefix, langs):
             f.write(json.dumps(result)+"\n")
 
 
-def _split_by_lang(results, tmp_dir="./tmp"):
-    fprefix = randomString(20)
-    pool = Pool(os.cpu_count())
-    func = partial(_save_to_tmp,
-                   tmp_dir=tmp_dir,
-                   fprefix=fprefix,
-                   langs=langs)
-    f = pool.imap(func, results)
-    list(f)
-    pool.close()
-    return fprefix
-
-
 def _initializer(lm_s, sp_s):
     global lm, sp
     lm = lm_s
@@ -170,7 +157,7 @@ def _add_lang_score_bulk(fprefix, tmp_dir="./tmp"):
         pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
         with open(os.path.join(
                 tmp_dir, fprefix+"_{}".format(lang))) as f:
-            out = pool.imap(_add_lang_score, f)
+            out = pool.imap_unordered(_add_lang_score, f)
             yield list(out)
             del(lm_s)
             del(sp_s)
@@ -223,17 +210,19 @@ def _load_lm(bin_dir, lang):
     sp.Load(spath)
     return lm, sp
 
-        
-def main(score_outpath, langstat_outpath):
+
+def main(score_outpath, langstat_outpath, tmp_dir="./tmp"):
     pool = Pool(os.cpu_count())
+    fprefix = randomString(20)
     files = [x.strip() for x in sys.stdin]
-    hashes = create_hashes(files)
-    results = pool.imap(_file_loader_bulk, files)
-    cld_func = partial(_corpus_loader_dedup, hashes=hashes)
-    results = pool.imap(cld_func, results)
-    results = pool.imap(_detect_lang, results)
-    fprefix = _split_by_lang(results)
-    #fprefix = "qygslozocmstpnvahkkx"
+    #hashes = create_hashes(files)
+    hashes = defaultdict(int)
+    line_gen = (x for x in tqdm(_file_loader_bulk(files)))
+    results = (_detect_lang(x) for x in _corpus_loader_dedup(line_gen, hashes))
+    _save_func = partial(_save_to_tmp,
+                         tmp_dir=tmp_dir, fprefix=fprefix, langs=langs)
+    list(pool.imap_unordered(_save_func, results))
+    gc.collect()
     func = partial(_output,
                    score_outpath=score_outpath,
                    langstat_outpath=langstat_outpath)
