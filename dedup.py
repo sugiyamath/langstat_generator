@@ -10,7 +10,6 @@ import os
 import text_normalizer
 import kenlm
 import sentencepiece as spm
-from joblib import Parallel, delayed, wrap_non_picklable_objects
 import json
 import random
 import string
@@ -166,7 +165,7 @@ def _initializer(lm_s, sp_s):
 
 def _add_lang_score_bulk(fprefix, tmp_dir="./tmp"):
     target_langs = [x.split("_")[-1] for x in os.listdir(tmp_dir)]
-    for lang in target_langs:
+    for lang in tqdm(target_langs):
         lm_s, sp_s = _load_lm(bin_dir, lang)
         pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
         with open(os.path.join(
@@ -183,7 +182,7 @@ def _output(results, score_outpath, langstat_outpath):
     out = {}
     sep = "_____"
     with open(score_outpath, "a") as f:
-        for result in tqdm(results):
+        for result in results:
             d = result["domain"] + sep + result["lang"] 
             if d not in out:
                 out[d] = 0
@@ -227,18 +226,19 @@ def _load_lm(bin_dir, lang):
         
 def main(score_outpath, langstat_outpath):
     pool = Pool(os.cpu_count())
-    #files = [x.strip() for x in sys.stdin]
-    #hashes = create_hashes(files)
-    #line_gen = (x for x in tqdm(_file_loader_bulk(files)))
-    #results = (_detect_lang(x) for x in _corpus_loader_dedup(line_gen, hashes))
-    #fprefix = _split_by_lang(results)
-    fprefix = "qygslozocmstpnvahkkx"
-    results_list = list(_add_lang_score_bulk(fprefix))
+    files = [x.strip() for x in sys.stdin]
+    hashes = create_hashes(files)
+    results = pool.imap(_file_loader_bulk, files)
+    cld_func = partial(_corpus_loader_dedup, hashes=hashes)
+    results = pool.imap(cld_func, results)
+    results = pool.imap(_detect_lang, results)
+    fprefix = _split_by_lang(results)
+    #fprefix = "qygslozocmstpnvahkkx"
     func = partial(_output,
                    score_outpath=score_outpath,
                    langstat_outpath=langstat_outpath)
-    f = map(func, results_list)
-    list(f)
+    for results in tqdm(_add_lang_score_bulk(fprefix)):
+        func(results)
     pool.close()
 
 
