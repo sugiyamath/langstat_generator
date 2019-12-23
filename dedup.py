@@ -1,6 +1,6 @@
 import sys
 import hashlib
-from collections import defaultdict, ChainMap
+from collections import defaultdict
 from tqdm import tqdm
 import gzip
 from multiprocessing.pool import Pool
@@ -9,10 +9,22 @@ import os
 import text_normalizer
 import kenlm
 import sentencepiece as spm
+from joblib import Parallel, delayed
+import json
+import random
+import string
 from functools import partial
 
 bin_dir = sys.argv[1]
 lid_model = fasttext.load_model(os.path.join(bin_dir, "lid.bin"))
+
+ls1 = {x.split(".")[0] for x in os.listdir(os.path.join(bin_dir, "lm_sp"))
+       if x.endswith(".arpa.bin")}
+ls2 = {x.split(".")[0] for x in os.listdir(os.path.join(bin_dir, "lm_sp"))
+       if x.endswith(".sp.model")}
+langs = ls1 & ls2
+
+shared_data = {lang: [] for lang in langs}
 
 
 def _file_loader(fname):
@@ -90,45 +102,63 @@ def _detect_lang(batch):
     lscore = sum(x/len(lscores) for x in lscores)
     out = max(out.items(), key=lambda x: len(x[1]))
     return {"lang": out[0],
-            "language_score": lscore,
+            "language_score": float(lscore),
             "length": len(''.join(out[1])),
             "url": batch["url"],
             "domain": batch["domain"],
             "data": batch["data"]}
 
 
-def _add_lang_score(result, lm, sp):
-    pp_scores = []
+def _add_lang_score(line, lm, sp):
+    result = json.loads(line.strip())
+    doc_score = 0
+    doc_length = 0
     for line in result["data"]:
         line = text_normalizer.normalize(line)
         pieces = ' '.join(sp.encode_as_pieces(line))
-        log_score = lm.score(' '.join(pieces))
-        if len(pieces):
-            pp_scores.append(10.0**(-log_score/len(pieces)))    
-    pp_score = sum(x/len(pp_scores) for x in pp_scores)
-    result["perplexity"] = pp_score
+        doc_score += lm.score(' '.join(pieces))
+        doc_length += len(pieces)
+    result["perplexity"] = 10.0**(-doc_score/doc_length)
     del(result["data"])
     return result
 
 
-def _split_by_lang(results):
-    while results:
-        stack = []
-        current_lang = None
-        ignore = False
-        for i, result in enumerate(results):
-            if current_lang is None:
-                current_lang = result["lang"]
-                try:
-                    lm, sp = _load_lm(bin_dir, current_lang)
-                except:
-                    ignore = True
-            if result["lang"] == current_lang:
-                if not ignore:
-                    yield _add_lang_score(result, lm, sp)
-                stack.append(i)
-        for i in stack[::-1]:
-            results.pop(i)
+def randomString(stringLength=10):
+    """Generate a random string of fixed length """
+    letters = string.ascii_lowercase
+    return ''.join(random.choice(letters) for i in range(stringLength))
+
+
+def _save_to_tmp(result, tmp_dir, fprefix, langs):
+    if result["lang"] in langs:
+        with open(os.path.join(
+                tmp_dir, fprefix+"_{}".format(result["lang"])), "a") as f:
+            f.write(json.dumps(result)+"\n")
+
+
+def _split_by_lang(results, tmp_dir="./tmp"):
+    fprefix = randomString(20)
+    pool = Pool(os.cpu_count())
+    func = partial(_save_to_tmp,
+                   tmp_dir=tmp_dir,
+                   fprefix=fprefix,
+                   langs=langs)
+    f = pool.imap(func, results)
+    list(f)
+    pool.close()
+    return fprefix
+
+
+def _add_lang_score_bulk(fprefix, tmp_dir="./tmp"):
+    pool = Pool(os.cpu_count())
+    target_langs = [x.split("_")[-1] for x in os.listdir(tmp_dir)]
+    for lang in target_langs:
+        lm, sp = _load_lm(bin_dir, lang)
+        with open(os.path.join(
+                tmp_dir, fprefix+"_{}".format(lang))) as f:
+            func = partial(_add_lang_score, lm=lm, sp=sp)
+            yield list(pool.imap(func, f))
+    pool.close()
 
 
 def _output(results, score_outpath, langstat_outpath):
@@ -182,9 +212,14 @@ def main(score_outpath, langstat_outpath):
     files = [x.strip() for x in sys.stdin]
     hashes = create_hashes(files)
     line_gen = (x for x in tqdm(_file_loader_bulk(files)))
-    results = pool.map(_detect_lang, _corpus_loader_dedup(line_gen, hashes))
-    results = _split_by_lang(results)
-    _output(results, score_outpath, langstat_outpath)
+    results = (_detect_lang(x) for x in _corpus_loader_dedup(line_gen, hashes))
+    fprefix = _split_by_lang(results)
+    results_list = (results for result in _add_lang_score_bulk(fprefix))
+    func = partial(_output,
+                   score_outpath=score_outpath,
+                   langstat_outpath=langstat_outpath)
+    list(pool.imap(func, results_list))
+    pool.close()
 
 
 if __name__ == "__main__":
