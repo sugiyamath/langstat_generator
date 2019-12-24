@@ -276,6 +276,7 @@ def _parallel_s(files, hashes, tmp_dir, fprefix, langs):
                 p.start()
                 ps.append(p)
             else:
+                ps = _check_process(ps)
                 if not ps:
                     break
     del(loaders)
