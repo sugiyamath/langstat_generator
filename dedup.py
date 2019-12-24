@@ -5,6 +5,7 @@ from collections import defaultdict
 from tqdm import tqdm
 import gzip
 from multiprocessing.pool import Pool
+from multiprocessing import Process
 import fasttext
 import os
 import text_normalizer
@@ -24,14 +25,14 @@ ls2 = {x.split(".")[0] for x in os.listdir(os.path.join(bin_dir, "lm_sp"))
        if x.endswith(".sp.model")}
 langs = ls1 & ls2
 
-shared_data = {lang: [] for lang in langs}
+shared_data = {lang: None for lang in langs}
 
 lm = None
 sp = None
 
 
 def _add_lang_score(line):
-    global lm, sp
+    global shared_data
     result = json.loads(line.strip())
     doc_score = 0
     doc_length = 0
@@ -144,23 +145,43 @@ def _save_to_tmp(result, tmp_dir, fprefix, langs):
             f.write(json.dumps(result)+"\n")
 
 
-def _initializer(lm_s, sp_s):
-    global lm, sp
-    lm = lm_s
-    sp = sp_s
+def _initializer(lang, lm_s, sp_s):
+    global shared_data
+    shared_data[lang] = (lm_s, sp_s)
 
 
 def _add_lang_score_bulk(fprefix, tmp_dir="./tmp"):
-    target_langs = [x.split("_")[-1] for x in os.listdir(tmp_dir)]
+    global shared_data
+    target_langs = {x.split("_")[-1] for x in os.listdir(tmp_dir)
+                    if x.startswith(fprefix)}
     for lang in tqdm(target_langs):
         lm_s, sp_s = _load_lm(bin_dir, lang)
-        pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
+        pool = Pool(os.cpu_count(), _initializer, (lang, lm_s, sp_s))
         with open(os.path.join(
                 tmp_dir, fprefix+"_{}".format(lang))) as f:
             out = pool.imap_unordered(_add_lang_score, f)
             yield list(out)
             del(lm_s)
             del(sp_s)
+            del(shared_data[lang])
+        pool.close()
+        gc.collect()
+
+
+def _add_lang_score_bulk(fprefix, tmp_dir="./tmp"):
+    global shared_data
+    target_langs = {x.split("_")[-1] for x in os.listdir(tmp_dir)
+                    if x.startswith(fprefix)}
+    for lang in tqdm(target_langs):
+        lm_s, sp_s = _load_lm(bin_dir, lang)
+        pool = Pool(os.cpu_count(), _initializer, (lang, lm_s, sp_s))
+        with open(os.path.join(
+                tmp_dir, fprefix+"_{}".format(lang))) as f:
+            out = pool.imap_unordered(_add_lang_score, f)
+            yield list(out)
+            del(lm_s)
+            del(sp_s)
+            del(shared_data[lang])
         pool.close()
         gc.collect()
 
@@ -211,24 +232,92 @@ def _load_lm(bin_dir, lang):
     return lm, sp
 
 
-def main(score_outpath, langstat_outpath, tmp_dir="./tmp"):
-    pool = Pool(os.cpu_count())
-    fprefix = randomString(20)
-    files = [x.strip() for x in sys.stdin]
-    hashes = create_hashes(files)
-    #hashes = defaultdict(int)
-    line_gen = (x for x in tqdm(_file_loader_bulk(files)))
-    results = (_detect_lang(x) for x in _corpus_loader_dedup(line_gen, hashes))
+def _group_n(lis, n):
+    for i in range(0, len(lis), n):
+        yield lis[i:i+n]
+
+
+def _save_bulk(results, tmp_dir, fprefix, langs):
     _save_func = partial(_save_to_tmp,
                          tmp_dir=tmp_dir, fprefix=fprefix, langs=langs)
-    list(pool.imap_unordered(_save_func, results))
+    for result in results:
+        _save_func(result)
+    del(results)
     gc.collect()
-    func = partial(_output,
-                   score_outpath=score_outpath,
-                   langstat_outpath=langstat_outpath)
-    for results in tqdm(_add_lang_score_bulk(fprefix)):
-        func(results)
-    pool.close()
+
+
+class LoaderProxy:
+    def __init__(self, loader):
+        self._loader = loader
+
+    def __iter__(self):
+        for result in self._loader:
+            yield result
+
+
+def _check_process(ps):
+    stack = []
+    for i, p in enumerate(ps):
+        if p.is_alive():
+            continue
+        else:
+            p.close()
+            stack.append(i)
+    for i in stack[::-1]:
+        ps.pop(i)
+    return ps
+            
+            
+def _parallel_s(files, hashes, tmp_dir, fprefix, langs):
+    loaders = [LoaderProxy((_detect_lang(x)
+                            for x in _corpus_loader_dedup(
+                                    tqdm(_file_loader(fname)), hashes)))
+               for fname in files]
+    _save_func = partial(_save_bulk,
+                         tmp_dir=tmp_dir,
+                         fprefix=fprefix,
+                         langs=langs)
+    count = 0
+    ps = []
+    loader = loaders.pop(0)
+    p = Process(target=_save_func, args=(loader, ))
+    p.start()
+    ps.append(p)
+    while loaders or ps:
+        ps = _check_process(ps)
+        while len(ps) < os.cpu_count():
+            print(count)
+            count += 1
+            loader = loaders.pop(0)
+            p = Process(target=_save_func, args=(loader, ))
+            p.start()
+            ps.append(p)
+    del(loaders)
+    gc.collect()
+
+
+def _parallel_t(fprefix, score_outpath, langstat_outpath):
+    pass
+
+    
+def main(score_outpath, langstat_outpath, tmp_dir="./tmp"):
+    #pool = Pool(os.cpu_count())
+    fprefix = randomString(20)
+    files = [x.strip() for x in sys.stdin]
+    #hashes = create_hashes(files)
+    hashes = defaultdict(int)
+    _parallel_s(files, hashes, tmp_dir, fprefix, langs)
+    #func = partial(_output,
+    #               score_outpath=score_outpath,
+    #               langstat_outpath=langstat_outpath)
+    #for results in tqdm(_add_lang_score_bulk(fprefix)):
+    #    func(results)
+    #line_gen = (x for x in tqdm(_file_loader_bulk(files)))
+    #results = (_detect_lang(x) for x in _corpus_loader_dedup(line_gen, hashes))
+    #_save_func = partial(_save_to_tmp,
+    #                     tmp_dir=tmp_dir, fprefix=fprefix, langs=langs)
+    #list(pool.imap_unordered(_save_func, results))
+    #pool.close()
 
 
 if __name__ == "__main__":
