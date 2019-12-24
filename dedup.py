@@ -189,6 +189,8 @@ def _add_lang_score_bulk(line_gen, lang,
     pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
     _output(pool.imap_unordered(_add_lang_score, line_gen),
             score_outpath, langstat_outpath)
+    del(lm_s)
+    del(sp_s)
     gc.collect()
 
 
@@ -273,6 +275,9 @@ def _parallel_s(files, hashes, tmp_dir, fprefix, langs):
                 p = Process(target=_save_func, args=(loader, ))
                 p.start()
                 ps.append(p)
+            else:
+                if not ps:
+                    break
     del(loaders)
     gc.collect()
 
@@ -290,12 +295,12 @@ def _parallel_t(fprefix, score_outpath, langstat_outpath, tmp_dir="./tmp"):
         
     
 def main(score_outpath, langstat_outpath, tmp_dir="./tmp"):
-    fprefix = "gvmwfmxlcbhydfjjzttx"
-    #fprefix = randomString(20)
-    #files = [x.strip() for x in sys.stdin]
-    #hashes = create_hashes(files)
+    #fprefix = "gvmwfmxlcbhydfjjzttx"
+    fprefix = randomString(20)
+    files = [x.strip() for x in sys.stdin]
+    hashes = create_hashes(files)
     #hashes = defaultdict(int)
-    #_parallel_s(files, hashes, tmp_dir, fprefix, langs)
+    _parallel_s(files, hashes, tmp_dir, fprefix, langs)
     _parallel_t(fprefix, score_outpath, langstat_outpath, tmp_dir)
 
 
