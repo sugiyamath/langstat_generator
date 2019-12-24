@@ -28,8 +28,6 @@ langs = ls1 & ls2
 lm = None
 sp = None
 
-shared_data = {lang: '' for lang in langs}
-
 
 def _file_loader(fname):
     with gzip.open(fname, "rt") as f:
@@ -126,8 +124,10 @@ def _save_to_tmp(result, tmp_dir, fprefix, langs):
             f.write(json.dumps(result)+"\n")
 
 
-def _initializer():
-    global shared_data
+def _initializer(lm_s, sp_s):
+    global lm, sp
+    lm = lm_s
+    sp = sp_s
 
 
 def _load_lm_bulk(langs):
@@ -164,9 +164,8 @@ def _output(results, score_outpath, langstat_outpath):
                 f.write('{}\t{}\t{}\n'.format(key[0], key[1], value))
 
 
-def _add_lang_score(line, lang):
-    global shared_data
-    lm, sp = shared_data[lang]
+def _add_lang_score(line):
+    global lm, sp
     result = json.loads(line.strip())
     doc_score = 0
     doc_length = 0
@@ -186,14 +185,10 @@ def _add_lang_score(line, lang):
 
 def _add_lang_score_bulk(line_gen, lang,
                          score_outpath, langstat_outpath, bin_dir):
-    global shared_data
-    lm, sp = _load_lm(lang, bin_dir)
-    shared_data[lang] = (lm, sp)
-    pool = Pool(os.cpu_count(), _initializer, ())
-    add_func = partial(_add_lang_score, lang=lang)
-    _output(pool.imap_unordered(add_func, line_gen),
+    lm_s, sp_s = _load_lm(lang, bin_dir)
+    pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
+    _output(pool.imap_unordered(_add_lang_score, line_gen),
             score_outpath, langstat_outpath)
-    del(shared_data[lang])
     gc.collect()
 
 
@@ -283,26 +278,16 @@ def _parallel_s(files, hashes, tmp_dir, fprefix, langs):
 
 
 def _parallel_t(fprefix, score_outpath, langstat_outpath, tmp_dir="./tmp"):
-    global shared_data
     target_langs = list({x.split("_")[-1] for x in os.listdir(tmp_dir)
                          if x.startswith(fprefix)})
-    ps = []
-    while target_langs or ps:
-        ps = _check_process(ps)
-        while len(ps) < os.cpu_count():
-            if target_langs:
-                lang = target_langs.pop(0)
-                loader = _jl_loader(tmp_dir, fprefix, lang)
-                p = Process(target=_add_lang_score_bulk,
-                            args=(loader,
-                                  lang,
-                                  score_outpath,
-                                  langstat_outpath,
-                                  bin_dir))
-                p.start()
-                ps.append(p)
-    gc.collect()
-
+    for lang in target_langs:
+        loader = _jl_loader(tmp_dir, fprefix, lang)
+        _add_lang_score_bulk(loader,
+                             lang,
+                             score_outpath,
+                             langstat_outpath,
+                             bin_dir)
+        
     
 def main(score_outpath, langstat_outpath, tmp_dir="./tmp"):
     fprefix = "gvmwfmxlcbhydfjjzttx"
