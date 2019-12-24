@@ -25,29 +25,10 @@ ls2 = {x.split(".")[0] for x in os.listdir(os.path.join(bin_dir, "lm_sp"))
        if x.endswith(".sp.model")}
 langs = ls1 & ls2
 
-shared_data = {lang: None for lang in langs}
-
 lm = None
 sp = None
 
-
-def _add_lang_score(line):
-    global shared_data
-    result = json.loads(line.strip())
-    doc_score = 0
-    doc_length = 0
-    for line in result["data"]:
-        line = text_normalizer.normalize(line)
-        pieces = ' '.join(sp.EncodeAsPieces(line))
-        if len(pieces):
-            doc_score += lm.score(' '.join(pieces))
-            doc_length += len(pieces)
-    if doc_length:
-        result["perplexity"] = 10.0**(-doc_score/doc_length)
-    else:
-        result["perplexity"] = 0.0
-    del(result["data"])
-    return result
+shared_data = {}
 
 
 def _file_loader(fname):
@@ -145,52 +126,30 @@ def _save_to_tmp(result, tmp_dir, fprefix, langs):
             f.write(json.dumps(result)+"\n")
 
 
-def _initializer(lang, lm_s, sp_s):
+def _initializer():
     global shared_data
-    shared_data[lang] = (lm_s, sp_s)
 
 
-def _add_lang_score_bulk(fprefix, tmp_dir="./tmp"):
+def _load_lm_bulk(langs):
     global shared_data
-    target_langs = {x.split("_")[-1] for x in os.listdir(tmp_dir)
-                    if x.startswith(fprefix)}
-    for lang in tqdm(target_langs):
-        lm_s, sp_s = _load_lm(bin_dir, lang)
-        pool = Pool(os.cpu_count(), _initializer, (lang, lm_s, sp_s))
-        with open(os.path.join(
-                tmp_dir, fprefix+"_{}".format(lang))) as f:
-            out = pool.imap_unordered(_add_lang_score, f)
-            yield list(out)
-            del(lm_s)
-            del(sp_s)
-            del(shared_data[lang])
-        pool.close()
-        gc.collect()
+    pool = Pool(os.cpu_count(), _initializer, ())
+    load_func = partial(_load_lm, bin_dir=bin_dir)
+    pool.map(load_func, langs)
+    pool.close()
 
 
-def _add_lang_score_bulk(fprefix, tmp_dir="./tmp"):
-    global shared_data
-    target_langs = {x.split("_")[-1] for x in os.listdir(tmp_dir)
-                    if x.startswith(fprefix)}
-    for lang in tqdm(target_langs):
-        lm_s, sp_s = _load_lm(bin_dir, lang)
-        pool = Pool(os.cpu_count(), _initializer, (lang, lm_s, sp_s))
-        with open(os.path.join(
-                tmp_dir, fprefix+"_{}".format(lang))) as f:
-            out = pool.imap_unordered(_add_lang_score, f)
-            yield list(out)
-            del(lm_s)
-            del(sp_s)
-            del(shared_data[lang])
-        pool.close()
-        gc.collect()
+def _jl_loader(tmp_dir, fprefix, lang):
+    with open(os.path.join(
+            tmp_dir, fprefix+"_{}".format(lang))) as f:
+        for line in f:
+            yield line
 
 
 def _output(results, score_outpath, langstat_outpath):
     out = {}
     sep = "_____"
     with open(score_outpath, "a") as f:
-        for result in results:
+        for result in tqdm(results):
             d = result["domain"] + sep + result["lang"] 
             if d not in out:
                 out[d] = 0
@@ -203,6 +162,31 @@ def _output(results, score_outpath, langstat_outpath):
             key = key.split(sep)
             if len(key) == 2:
                 f.write('{}\t{}\t{}\n'.format(key[0], key[1], value))
+
+
+def _add_lang_score(line, lang, lm, sp):
+    result = json.loads(line.strip())
+    doc_score = 0
+    doc_length = 0
+    for line in result["data"]:
+        line = text_normalizer.normalize(line)
+        pieces = ' '.join(sp.EncodeAsPieces(line))
+        if len(pieces):
+            doc_score += lm.score(' '.join(pieces))
+            doc_length += len(pieces)
+    if doc_length:
+        result["perplexity"] = 10.0**(-doc_score/doc_length)
+    else:
+        result["perplexity"] = 0.0
+    del(result["data"])
+    return result
+
+
+def _add_lang_score_bulk(line_gen, lang,
+                         score_outpath, langstat_outpath, bin_dir):
+    lm, sp = _load_lm(lang, bin_dir)
+    add_func = partial(_add_lang_score, lang=lang, lm=lm, sp=sp)
+    _output((add_func(x) for x in line_gen), score_outpath, langstat_outpath)
 
 
 def _create_hash(fname):
@@ -223,7 +207,7 @@ def create_hashes(files):
     return hashes
 
 
-def _load_lm(bin_dir, lang):
+def _load_lm(lang, bin_dir):
     kpath = os.path.join(bin_dir, "lm_sp", lang+".arpa.bin")
     spath = os.path.join(bin_dir, "lm_sp", lang+".sp.model")
     lm = kenlm.Model(kpath)
@@ -277,47 +261,48 @@ def _parallel_s(files, hashes, tmp_dir, fprefix, langs):
                          tmp_dir=tmp_dir,
                          fprefix=fprefix,
                          langs=langs)
-    count = 0
     ps = []
-    loader = loaders.pop(0)
-    p = Process(target=_save_func, args=(loader, ))
-    p.start()
-    ps.append(p)
     while loaders or ps:
         ps = _check_process(ps)
         while len(ps) < os.cpu_count():
-            print(count)
-            count += 1
-            loader = loaders.pop(0)
-            p = Process(target=_save_func, args=(loader, ))
-            p.start()
-            ps.append(p)
+            if loaders:
+                loader = loaders.pop(0)
+                p = Process(target=_save_func, args=(loader, ))
+                p.start()
+                ps.append(p)
     del(loaders)
     gc.collect()
 
 
-def _parallel_t(fprefix, score_outpath, langstat_outpath):
-    pass
+def _parallel_t(fprefix, score_outpath, langstat_outpath, tmp_dir="./tmp"):
+    target_langs = list({x.split("_")[-1] for x in os.listdir(tmp_dir)
+                         if x.startswith(fprefix)})
+    ps = []
+    while target_langs or ps:
+        ps = _check_process(ps)
+        while len(ps) < os.cpu_count():
+            if target_langs:
+                lang = target_langs.pop(0)
+                loader = _jl_loader(tmp_dir, fprefix, lang)
+                p = Process(target=_add_lang_score_bulk,
+                            args=(loader,
+                                  lang,
+                                  score_outpath,
+                                  langstat_outpath,
+                                  bin_dir))
+                p.start()
+                ps.append(p)
+    gc.collect()
 
     
 def main(score_outpath, langstat_outpath, tmp_dir="./tmp"):
-    #pool = Pool(os.cpu_count())
-    fprefix = randomString(20)
-    files = [x.strip() for x in sys.stdin]
+    fprefix = "gvmwfmxlcbhydfjjzttx"
+    #fprefix = randomString(20)
+    #files = [x.strip() for x in sys.stdin]
     #hashes = create_hashes(files)
-    hashes = defaultdict(int)
-    _parallel_s(files, hashes, tmp_dir, fprefix, langs)
-    #func = partial(_output,
-    #               score_outpath=score_outpath,
-    #               langstat_outpath=langstat_outpath)
-    #for results in tqdm(_add_lang_score_bulk(fprefix)):
-    #    func(results)
-    #line_gen = (x for x in tqdm(_file_loader_bulk(files)))
-    #results = (_detect_lang(x) for x in _corpus_loader_dedup(line_gen, hashes))
-    #_save_func = partial(_save_to_tmp,
-    #                     tmp_dir=tmp_dir, fprefix=fprefix, langs=langs)
-    #list(pool.imap_unordered(_save_func, results))
-    #pool.close()
+    #hashes = defaultdict(int)
+    #_parallel_s(files, hashes, tmp_dir, fprefix, langs)
+    _parallel_t(fprefix, score_outpath, langstat_outpath, tmp_dir)
 
 
 if __name__ == "__main__":
