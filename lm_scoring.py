@@ -78,6 +78,7 @@ def _add_lang_score_bulk(line_gen, lang, score_outpath, langstat_outpath,
     pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
     _output(pool.imap_unordered(_add_lang_score, line_gen), score_outpath,
             langstat_outpath)
+    pool.close()
     del lm_s
     del sp_s
     gc.collect()
