@@ -68,7 +68,7 @@ def _add_lang_score(line):
         result["perplexity"] = 10.0**(-doc_score / doc_length)
     else:
         result["perplexity"] = 0.0
-    del (result["data"])
+    del result["data"]
     return result
 
 
@@ -78,8 +78,8 @@ def _add_lang_score_bulk(line_gen, lang, score_outpath, langstat_outpath,
     pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
     _output(pool.imap_unordered(_add_lang_score, line_gen), score_outpath,
             langstat_outpath)
-    del (lm_s)
-    del (sp_s)
+    del lm_s
+    del sp_s
     gc.collect()
 
 

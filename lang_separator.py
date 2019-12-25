@@ -55,7 +55,7 @@ def _save_bulk(results, tmp_dir, fprefix, langs):
                          langs=langs)
     for result in results:
         _save_func(result)
-    del (results)
+    del results
     gc.collect()
 
 
@@ -96,5 +96,5 @@ def do(files, hashes, tmp_dir, fprefix, langs, bin_dir):
                 ps = _check_process(ps)
                 if not ps:
                     break
-    del (loaders)
+    del loaders
     gc.collect()
