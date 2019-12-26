@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH -N 7
-#SBATCH -n 28
+#SBATCH -n 7
 #SBATCH -c 16
 #SBATCH -t 08:00:00
 
