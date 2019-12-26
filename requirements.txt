@@ -2,3 +2,4 @@ fasttext==0.9.1
 kenlm==0.0.0
 sentencepiece==0.1.83
 tqdm==4.40.2
+requests==2.22.0

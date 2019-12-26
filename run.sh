@@ -5,17 +5,17 @@
 #SBATCH -c 16
 #SBATCH -t 08:00:00
 
-TMP_PREFIX=./tmp
 PY_PATH=./venv/bin/python
-OUT_PATH=./out
+OUT_DIR=./out
 WET_PATH=./wet.paths.gz
+BIN_DIR=./bin
+MAX_SHARD_NUM=4
+MAX_NODE_NUM=6
 
-for j in $(seq 0 3); do
-    for i in $(seq 0 6); do
-	TMP_PATH=${TMP_PREFIX}_${i}_${j}
-	mkdir -p ${TMP_PATH}
-	srun -N 1 -n 1 bash execute.sh ${WET_PATH} ${PY_PATH} ${i} ${j} ${OUT_PATH} ${TMP_PATH} &
-    done
-    wait
-    rm ${TMP_PREFIX}* -r
+mkdir -p ${OUT_DIR}
+
+for i in $(seq 0 ${MAX_NODE_NUM}); do
+    srun -N 1 -n 1 bash execute.sh ${WET_PATH} ${PY_PATH} ${i} ${MAX_SHARD_NUM} ${OUT_DIR} ${BIN_DIR} &
 done
+wait
+
