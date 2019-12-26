@@ -25,7 +25,8 @@ def main(node_id,
     for shard_id in range(max_shard_num):
         with tempfile.TemporaryDirectory(dir=".") as tmp_dir:
             target_urls = list(
-                sharding(urls, node_id, shard_id, total_nodes, wet_per_shard))
+                sharding.sharding(
+                    urls, node_id, shard_id, total_nodes, wet_per_shard))
             langs = utils.available_langs(bin_dir)
             fprefix = utils.random_string(20)
             files = data_downloader.download_bulk(target_urls, tmp_dir)
