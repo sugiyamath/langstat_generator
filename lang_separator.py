@@ -5,6 +5,7 @@ import fasttext
 import wet_loader
 from functools import partial
 from multiprocessing import Process
+from tqdm import tqdm
 
 LID_MODEL = None
 
@@ -76,8 +77,8 @@ def do(files, hashes, tmp_dir, fprefix, langs, bin_dir):
     global LID_MODEL
     LID_MODEL = fasttext.load_model(os.path.join(bin_dir, "lid.bin"))
     loaders = [
-        LoaderProxy((_detect_lang(x) for x in wet_loader.corpus_loader_dedup(
-            wet_loader.file_loader(fname), hashes))) for fname in files
+        LoaderProxy((_detect_lang(x) for x in tqdm(wet_loader.corpus_loader_dedup(
+            wet_loader.file_loader(fname), hashes)))) for fname in files
     ]
     _save_func = partial(_save_bulk,
                          tmp_dir=tmp_dir,

@@ -5,6 +5,7 @@ import text_normalizer
 import kenlm
 import sentencepiece as spm
 from multiprocessing.pool import Pool
+from tqdm import tqdm
 
 
 LM_MODEL = None
@@ -28,7 +29,7 @@ def _initializer(lm_s, sp_s):
 
 def _jl_loader(tmp_dir, fprefix, lang):
     with open(os.path.join(tmp_dir, fprefix + "_{}".format(lang))) as f:
-        for line in f:
+        for line in tqdm(f):
             yield line
 
 
