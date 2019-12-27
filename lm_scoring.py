@@ -7,9 +7,9 @@ import sentencepiece as spm
 from multiprocessing.pool import Pool
 from tqdm import tqdm
 
-
 LM_MODEL = None
 SP_MODEL = None
+DEFAULT_CPUS = os.cpu_count()
 
 
 def _load_lm(lang, bin_dir):
@@ -73,10 +73,14 @@ def _add_lang_score(line):
     return result
 
 
-def _add_lang_score_bulk(line_gen, lang, score_outpath, langstat_outpath,
-                         bin_dir):
+def _add_lang_score_bulk(line_gen,
+                         lang,
+                         score_outpath,
+                         langstat_outpath,
+                         bin_dir,
+                         num_cpus=DEFAULT_CPUS):
     lm_s, sp_s = _load_lm(lang, bin_dir)
-    pool = Pool(os.cpu_count(), _initializer, (lm_s, sp_s))
+    pool = Pool(num_cpus, _initializer, (lm_s, sp_s))
     _output(pool.imap_unordered(_add_lang_score, line_gen), score_outpath,
             langstat_outpath)
     pool.close()
@@ -85,7 +89,12 @@ def _add_lang_score_bulk(line_gen, lang, score_outpath, langstat_outpath,
     gc.collect()
 
 
-def do(fprefix, score_outpath, langstat_outpath, bin_dir, tmp_dir="./tmp"):
+def do(fprefix,
+       score_outpath,
+       langstat_outpath,
+       bin_dir,
+       tmp_dir="./tmp",
+       num_cpus=DEFAULT_CPUS):
     target_langs = list({
         x.split("_")[-1]
         for x in os.listdir(tmp_dir) if x.startswith(fprefix)
@@ -93,4 +102,4 @@ def do(fprefix, score_outpath, langstat_outpath, bin_dir, tmp_dir="./tmp"):
     for lang in target_langs:
         loader = _jl_loader(tmp_dir, fprefix, lang)
         _add_lang_score_bulk(loader, lang, score_outpath, langstat_outpath,
-                             bin_dir)
+                             bin_dir, num_cpus)

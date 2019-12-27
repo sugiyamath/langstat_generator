@@ -8,6 +8,7 @@ from multiprocessing import Process
 from tqdm import tqdm
 
 LID_MODEL = None
+DEFAULT_CPUS = os.cpu_count()
 
 
 class LoaderProxy:
@@ -73,12 +74,15 @@ def _check_process(ps):
     return ps
 
 
-def do(files, hashes, tmp_dir, fprefix, langs, bin_dir):
+def do(files, hashes, tmp_dir, fprefix, langs, bin_dir, num_cpus=DEFAULT_CPUS):
     global LID_MODEL
     LID_MODEL = fasttext.load_model(os.path.join(bin_dir, "lid.bin"))
     loaders = [
-        LoaderProxy((_detect_lang(x) for x in tqdm(wet_loader.corpus_loader_dedup(
-            wet_loader.file_loader(fname), hashes)))) for fname in files
+        LoaderProxy((_detect_lang(x)
+                     for x in tqdm(
+                         wet_loader.corpus_loader_dedup(
+                             wet_loader.file_loader(fname), hashes))))
+        for fname in files
     ]
     _save_func = partial(_save_bulk,
                          tmp_dir=tmp_dir,
@@ -87,7 +91,7 @@ def do(files, hashes, tmp_dir, fprefix, langs, bin_dir):
     ps = []
     while loaders or ps:
         ps = _check_process(ps)
-        while len(ps) < os.cpu_count():
+        while len(ps) < num_cpus:
             if loaders:
                 loader = loaders.pop(0)
                 p = Process(target=_save_func, args=(loader, ))

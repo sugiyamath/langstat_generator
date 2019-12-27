@@ -4,6 +4,8 @@ from multiprocessing.pool import Pool
 from tqdm import tqdm
 from functools import partial
 
+DEFAULT_CPUS = os.cpu_count()
+
 
 def _download_file(url, tmp_dir):
     local_filename = url.split('/')[-1]
@@ -17,8 +19,8 @@ def _download_file(url, tmp_dir):
     return filepath
 
 
-def download_bulk(urls, tmp_dir):
-    pool = Pool(os.cpu_count())
+def download_bulk(urls, tmp_dir, num_cpus=DEFAULT_CPUS):
+    pool = Pool(num_cpus)
     func = partial(_download_file, tmp_dir=tmp_dir)
     files = pool.map(func, urls)
     pool.close()

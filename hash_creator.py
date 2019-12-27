@@ -5,6 +5,8 @@ from collections import defaultdict
 from multiprocessing.pool import Pool
 from tqdm import tqdm
 
+DEFAULT_CPUS = os.cpu_count()
+
 
 def _create_hash(fname):
     hashes = defaultdict(int)
@@ -16,8 +18,8 @@ def _create_hash(fname):
     return hashes
 
 
-def create_hashes(files):
-    pool = Pool(os.cpu_count())
+def create_hashes(files, num_cpus=DEFAULT_CPUS):
+    pool = Pool(num_cpus)
     hashes_list = pool.map(_create_hash, files)
     hashes = defaultdict(int)
     for h in hashes_list:
