@@ -18,7 +18,7 @@ def main(node_id,
          total_nodes=7,
          wet_per_shard=50,
          num_cpus=12,
-         num_dl_parallel=5):
+         num_dl_parallel=1):
     node_id = int(node_id)
     max_shard_num = int(max_shard_num)
     total_nodes = int(total_nodes)
