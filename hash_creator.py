@@ -10,19 +10,28 @@ DEFAULT_CPUS = os.cpu_count()
 
 def _create_hash(fname):
     hashes = defaultdict(int)
+    arrived = set()
     for line, mode in tqdm(
             wet_loader.corpus_loader(wet_loader.file_loader(fname))):
         if mode is not None and not mode:
-            hashes[hashlib.sha1(bytes(line.lower(),
-                                      encoding="utf-8")).digest()] += 1
-    return hashes
+            h = hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()
+            if h in arrived:
+                continue
+            else:
+                hashes[h] += 1
+                if hashes[h] > 1:
+                    arrived.add(h)
+                    del hashes[h]
+    return hashes.keys()
 
 
 def create_hashes(files, num_cpus=DEFAULT_CPUS):
     pool = Pool(num_cpus)
     hashes_list = pool.map(_create_hash, files)
-    hashes = defaultdict(int)
-    for h in hashes_list:
-        hashes.update(h)
+    hashes = []
+    for h in tqdm(hashes_list):
+        hashes.extend(list(h))
     pool.close()
-    return hashes
+    return set(hashes)
+
+

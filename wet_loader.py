@@ -59,7 +59,6 @@ def corpus_loader_dedup(line_generator, hashes):
             else:
                 header_mode = False
         else:
-            h = hashes[hashlib.sha1(bytes(line.lower(),
-                                          encoding="utf-8")).digest()]
-            if h < 2:
+            h = hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()
+            if h in hashes:
                 out.append(line)
