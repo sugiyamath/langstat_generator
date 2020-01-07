@@ -29,7 +29,7 @@ def _initializer(lm_s, sp_s):
 
 def _jl_loader(tmp_dir, fprefix, lang):
     with open(os.path.join(tmp_dir, fprefix + "_{}".format(lang))) as f:
-        for line in tqdm(f):
+        for line in tqdm(f, bar_format="{r_bar}"):
             yield line
 
 

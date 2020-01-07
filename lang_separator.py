@@ -74,14 +74,21 @@ def _check_process(ps):
     return ps
 
 
-def do(files, hashes, tmp_dir, fprefix, langs, bin_dir, num_cpus=DEFAULT_CPUS):
+def do(files,
+       hashes,
+       tmp_dir,
+       fprefix,
+       langs,
+       bin_dir,
+       num_cpus=DEFAULT_CPUS,
+       logby=5500):
     global LID_MODEL
     LID_MODEL = fasttext.load_model(os.path.join(bin_dir, "lid.bin"))
     loaders = [
         LoaderProxy((_detect_lang(x)
-                     for x in tqdm(
-                         wet_loader.corpus_loader_dedup(
-                             wet_loader.file_loader(fname), hashes))))
+                     for x in tqdm(wet_loader.corpus_loader_dedup(
+                             wet_loader.file_loader(fname), hashes),
+                                   miniters=logby, bar_format="{r_bar}")))
         for fname in files
     ]
     _save_func = partial(_save_bulk,

@@ -8,21 +8,29 @@ from tqdm import tqdm
 DEFAULT_CPUS = os.cpu_count()
 
 
-def _create_hash(fname):
+def _create_hash(fname, logby=500000):
     hashes = defaultdict(int)
     arrived = set()
-    for line, mode in tqdm(
+    out = []
+    for i, (line, mode) in enumerate(
             wet_loader.corpus_loader(wet_loader.file_loader(fname))):
+        if i % logby == 0:
+            print("hash_creator:{}, {}".format(fname, i))
         if mode is not None and not mode:
-            h = hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()
+            try:
+                h = hashlib.sha1(
+                    bytes(line.lower(), encoding="utf-8")).digest()
+            except Exception:
+                print("hash_creator: Error {} {} {}".format(fname, i, line))
             if h in arrived:
                 continue
             else:
                 hashes[h] += 1
                 if hashes[h] > 1:
                     arrived.add(h)
+                    out.extend([h])
                     del hashes[h]
-    return hashes.keys()
+    return out
 
 
 def create_hashes(files, num_cpus=DEFAULT_CPUS):
@@ -30,7 +38,7 @@ def create_hashes(files, num_cpus=DEFAULT_CPUS):
     hashes_list = pool.map(_create_hash, files)
     hashes = []
     for h in tqdm(hashes_list):
-        hashes.extend(list(h))
+        hashes.extend(h)
     pool.close()
     return set(hashes)
 
