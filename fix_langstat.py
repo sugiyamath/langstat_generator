@@ -13,7 +13,7 @@ def fix(lines):
             continue
         else:
             if prev and prev_value > 0:
-                yield prev+"\t"+str(float(prev_value)/float(count))
+                yield prev+"\t"+str(prev_value//count)
             count = 1
         prev = current
         prev_value = current_value
