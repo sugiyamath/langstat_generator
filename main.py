@@ -1,3 +1,4 @@
+
 import gc
 import os
 import sys
@@ -53,10 +54,10 @@ def main(node_id,
     for shard_id in range(max_shard_num):
         _plog("start shard", node_id, shard_id, st)
         with tempfile.TemporaryDirectory(dir=".") as tmp_dir:
-            targets = all_targets
-            #targets = list(
-            #    sharding.sharding(all_targets, node_id, shard_id, total_nodes,
-            #                      wet_per_shard))
+            #targets = all_targets
+            targets = list(
+                sharding.sharding(all_targets, node_id, shard_id, total_nodes,
+                                  wet_per_shard))
             if is_target_http:
                 files = data_downloader.download_bulk(targets, tmp_dir,
                                                       num_dl_parallel)
