@@ -36,17 +36,23 @@ def _jl_loader(tmp_dir, fprefix, lang, logby=100):
 def _output(results, score_outpath, langstat_outpath):
     out = {}
     sep = "_____"
+    urllist = set()
     with open(score_outpath, "a") as f:
         for result in results:
+            if result["url"] in urllist:
+                continue
             d = result["domain"] + sep + result["lang"]
             if d not in out:
                 out[d] = 0
             out[d] += result["length"]
+            urllist.add(result["url"])
             f.write("{}\t{}\t{}\t{}\t{}\n".format(result["url"],
                                                   result["domain"],
                                                   result["lang"],
                                                   result["language_score"],
                                                   result["perplexity"]))
+    del urllist
+    gc.collect()
     with open(langstat_outpath, "a") as f:
         for key, value in out.items():
             key = key.split(sep)
