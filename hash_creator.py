@@ -12,10 +12,9 @@ def _create_hash(fname, logby=500000):
     hashes = defaultdict(int)
     arrived = set()
     out = []
-    for i, (line, mode) in enumerate(
-            wet_loader.corpus_loader(wet_loader.file_loader(fname))):
-        if i % logby == 0:
-            print("hash_creator:{}, {}".format(fname, i))
+    for i, (line, mode) in tqdm(enumerate(
+            wet_loader.corpus_loader(wet_loader.file_loader(fname))),
+                                miniters=logby, bar_format="{r_bar}"):
         if mode is not None and not mode:
             try:
                 h = hashlib.sha1(

@@ -27,9 +27,9 @@ def _initializer(lm_s, sp_s):
     SP_MODEL = sp_s
 
 
-def _jl_loader(tmp_dir, fprefix, lang):
+def _jl_loader(tmp_dir, fprefix, lang, logby=100):
     with open(os.path.join(tmp_dir, fprefix + "_{}".format(lang))) as f:
-        for line in tqdm(f, bar_format="{r_bar}"):
+        for line in tqdm(f, miniters=logby, bar_format="{r_bar}"):
             yield line
 
 

@@ -19,7 +19,7 @@ def _pt(st):
 
 def _plog(msg, nid, sid, st):
     print("{}\t{}\tnid:{}, sid:{}, msg:{} ".format(
-        datetime.time(), _pt(st), nid, sid, msg))
+        datetime.datetime.now(), _pt(st), nid, sid, msg))
 
 
 def main(node_id,
