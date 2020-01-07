@@ -59,7 +59,12 @@ def corpus_loader_dedup(line_generator, hashes):
             else:
                 header_mode = False
         else:
-            h = hashlib.sha1(bytes(line.lower(), encoding="utf-8")).digest()
+            try:
+                h = hashlib.sha1(
+                    bytes(line.lower(), encoding="utf-8")).digest()
+            except Exception:
+                print("wet_loader: Error {}".format(line))
+                continue
             if h in hashes:
                 continue
             out.append(line)
