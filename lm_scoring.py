@@ -1,5 +1,6 @@
 import gc
 import os
+import sys
 import json
 import text_normalizer
 import kenlm
@@ -29,7 +30,11 @@ def _initializer(lm_s, sp_s):
 
 def _jl_loader(tmp_dir, fprefix, lang, logby=100):
     with open(os.path.join(tmp_dir, fprefix + "_{}".format(lang))) as f:
-        for line in tqdm(f, miniters=logby, bar_format="{r_bar}"):
+        for line in tqdm(f,
+                         miniters=logby,
+                         bar_format="{r_bar}",
+                         file=sys.stdout):
+            sys.stdout.flush()
             yield line
 
 

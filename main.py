@@ -117,7 +117,6 @@ def main(node_id,
                 _plog_s("lm_scoring: done")
             except Exception as e:
                 _plog_s("Error: {}".format(str(e)))
-                _rmall(tmp_dir)
             finally:
                 _mvall(".txt", tmp_dir, out_dir)
                 _rmall(tmp_dir)

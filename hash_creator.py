@@ -1,4 +1,6 @@
+
 import os
+import sys
 import hashlib
 import wet_loader
 from collections import defaultdict
@@ -14,7 +16,9 @@ def _create_hash(fname, logby=500000):
     out = []
     for i, (line, mode) in tqdm(enumerate(
             wet_loader.corpus_loader(wet_loader.file_loader(fname))),
-                                miniters=logby, bar_format="{r_bar}"):
+                                miniters=logby, bar_format="{r_bar}",
+                                file=sys.stdout):
+        sys.stdout.flush()
         if mode is not None and not mode:
             try:
                 h = hashlib.sha1(

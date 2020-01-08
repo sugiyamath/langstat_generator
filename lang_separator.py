@@ -1,5 +1,6 @@
 import gc
 import os
+import sys
 import json
 import fasttext
 import wet_loader
@@ -32,6 +33,7 @@ def _detect_lang(batch):
         out[lang].append(line)
     lscore = sum(x / len(lscores) for x in lscores)
     out = max(out.items(), key=lambda x: len(x[1]))
+    sys.stdout.flush()
     return {
         "lang": out[0],
         "language_score": float(lscore),
@@ -91,7 +93,8 @@ def do(files,
         LoaderProxy((_detect_lang(x)
                      for x in tqdm(wet_loader.corpus_loader_dedup(
                              wet_loader.file_loader(fname), hashes),
-                                   miniters=logby, bar_format="{r_bar}")))
+                                   miniters=logby, bar_format="{r_bar}",
+                                   file=sys.stdout)))
         for fname in files
     ]
     _save_func = partial(_save_bulk,
