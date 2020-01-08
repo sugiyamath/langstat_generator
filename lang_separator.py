@@ -67,7 +67,10 @@ def _check_process(ps):
         if p.is_alive():
             continue
         else:
-            p.close()
+            try:
+                p.close()
+            except AttributeError:
+                pass
             stack.append(i)
     for i in stack[::-1]:
         ps.pop(i)
