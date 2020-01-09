@@ -21,8 +21,9 @@ def _pt(st):
 
 
 def _plog(msg, nid, sid, st):
-    print("{}\t{}\tnid:{}, sid:{}, msg:{} ".format(
-        datetime.datetime.now(), _pt(st), nid, sid, msg))
+    print("{}\t{}\tnid:{}\tsid:{}\tmsg:{}".format(
+        datetime.datetime.now(), _pt(st), nid, sid, msg),
+          flush=True)
 
 
 def _rmall(target_dir):
