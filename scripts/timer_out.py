@@ -15,8 +15,8 @@ if __name__ == "__main__":
     log_dir = sys.argv[2]
     p = Process(target=print_symbol, args=(".", ))
     p.start()
-    with open(os.path.join(log_dir, "{}.log".format(node_id)), "w") as f:
-        for line in sys.stdin:
+    for line in sys.stdin:
+        with open(os.path.join(log_dir, "{}.log".format(node_id)), "a") as f:
             f.write(line)
     p.terminate()
     while p.is_alive():

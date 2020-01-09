@@ -8,6 +8,10 @@ OUT_DIR=$5
 BIN_DIR=$6
 LOG_DIR=out_log
 
+sudo timedatectl set-timezone UTC
+sudo timedatectl set-ntp true
+sudo timedatectl set-local-rtc 0
+
 rm -r /tmp/*
 mkdir -p ${LOG_DIR}
 sudo unmount -l ./data
