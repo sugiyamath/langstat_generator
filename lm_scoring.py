@@ -94,6 +94,12 @@ def _add_lang_score_bulk(line_gen,
     gc.collect()
 
 
+def _rmlang(target_dir, lang):
+    for fname in os.listdir(target_dir):
+        if fname.endswith("_{}".format(lang)):
+            os.unlink(os.path.join(target_dir, fname))
+
+
 def do(fprefix,
        score_outpath,
        langstat_outpath,
@@ -108,3 +114,4 @@ def do(fprefix,
         loader = _jl_loader(tmp_dir, fprefix, lang)
         _add_lang_score_bulk(loader, lang, score_outpath, langstat_outpath,
                              bin_dir, num_cpus)
+        _rmlang(tmp_dir, lang)
