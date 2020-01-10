@@ -11,7 +11,7 @@ sudo timedatectl set-timezone UTC
 sudo timedatectl set-ntp true
 sudo timedatectl set-local-rtc 0
 
-rm -r /tmp/*
+rm -r /tmp/tmp*
 sudo umount -l ./cc_data
 sudo umount -l ./langstat
 ./goofys commoncrawl ./cc_data
