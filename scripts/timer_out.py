@@ -17,7 +17,9 @@ if __name__ == "__main__":
     p.terminate()
     while p.is_alive():
         pass
-    p.close()
-        
+    try:
+        p.close()
+    except AttributeError:
+        pass
             
     
