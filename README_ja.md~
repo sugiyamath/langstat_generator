@@ -86,5 +86,5 @@ You also need to check execute.sh.
 - ```goofys langstat ./langstat``` means mounting the s3 bucket of language model. Change this from ```langstat``` to your bucket name.
 - ```head -n 1120``` is the number of wet files you want to use.
 
-If you want to change the number of CPUs, change ```num_cpus``` parameter in ```main.py``` .
+
 
