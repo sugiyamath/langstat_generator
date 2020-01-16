@@ -97,3 +97,26 @@ $ sbatch --no-kill run.sh
 
 
 もし、各々のノードで利用するCPU数を変更したい場合は、main.pyのパラメータに ```num_cpus``` があるので、それを修正してください。
+
+また、shardingモジュールは、全体のノード数、シャード1あたりのWET数、ノード番号、シャード番号を指定することでファイルを分割しています。以下は、main.py内でshardingモジュールが使われている部分です。
+
+```python
+targets = list(
+    sharding.sharding(all_targets,
+                      node_id,
+                      shard_id,
+                      total_nodes,
+                      wet_per_shard))
+```
+
+この中で、```total_nodes``` と```wet_per_shard``` はmain.pyのパラメータに存在します。cc_netの推奨設定は ```wet_per_shard=50``` なので、通常、変更する必要があるのは ```total_nodes``` だけです。
+
+shardingモジュールをテストするには以下のコマンドを実行します:
+
+```sh
+$ cat wet.paths.gz | head -n テストしたいWET総数 | python3 sharding.py テストしたいノード番号 テストしたいノード内シャード番号(0～n)
+```
+
+この出力は、当該ノード・シャードで使われるWETパスの一覧が表示されます。
+
+上記のshardingモジュールのテストをする場合、total_nodesの設定は、sharding.pyのデフォルトパラメータを書き換えてください。
