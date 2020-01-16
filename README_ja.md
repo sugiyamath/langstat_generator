@@ -70,7 +70,7 @@ s3://yourbucketname/bin/
 ```
 
 
-# run
+## run
 
 実行は単純に以下を実行するだけです:
 
@@ -120,3 +120,18 @@ $ zcat wet.paths.gz | head -n テストしたいWET総数 | python3 sharding.py 
 この出力は、当該ノード・シャードで使われるWETパスの一覧が表示されます。
 
 上記のshardingモジュールのテストをする場合、total_nodesの設定は、sharding.pyのデフォルトパラメータを書き換えてください。
+
+## merge
+
+langstat_generatorの出力は二種類あります:
+
+- langstat_<nodeid>_<shardid>.txt : 言語統計
+- lmscore_<nodeid>_<shardid>.txt : 言語モデルと言語検出モデルのスコア
+
+この2つの結果をマージしたい場合、```scripts/merge_stat.py``` を使います。上記ファイルが出力された先が ```./out``` の場合は以下です:
+
+```sh
+$ python3 scripts/merge_stat.py ./out
+```
+
+これにより、```./out``` 内に、```.txt.mgd```というファイルが生成されます。このファイルが結合後のファイルです。
