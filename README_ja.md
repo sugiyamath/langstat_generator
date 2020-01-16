@@ -114,7 +114,7 @@ targets = list(
 shardingモジュールをテストするには以下のコマンドを実行します:
 
 ```sh
-$ cat wet.paths.gz | head -n テストしたいWET総数 | python3 sharding.py テストしたいノード番号 テストしたいノード内シャード番号(0～n)
+$ zcat wet.paths.gz | head -n テストしたいWET総数 | python3 sharding.py テストしたいノード番号 テストしたいノード内シャード番号(0～n)
 ```
 
 この出力は、当該ノード・シャードで使われるWETパスの一覧が表示されます。
